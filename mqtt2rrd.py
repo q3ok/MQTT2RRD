@@ -18,8 +18,8 @@
 #
 import sys, os, argparse, atexit, time, logging, ConfigParser, grp, pwd, getpass, json
 from signal import SIGTERM
-import mosquitto, rrdtool
-
+import rrdtool
+import paho.mqtt.client as paho
 logger=logging.getLogger("MQTT2RRD")
 
 config = ConfigParser.RawConfigParser()
@@ -91,7 +91,7 @@ def run(args):
     while(True):
         try:
             logger.debug("Entering Loop")
-            client = mosquitto.Mosquitto(get_config_item("mqtt", "client_id", "MQTT2RRD Client"))
+            client = paho.Client(get_config_item("mqtt", "client_id", "MQTT2RRD Client"))
             client.on_message = on_message
             client.on_connect = on_connect
 
@@ -118,7 +118,7 @@ def run(args):
 # MQTT Callback handlers
 #
 ####
-def on_connect(client, userdata, rc):
+def on_connect(client, userdata, flags, rc):
     logger.info("Connected to server.")
     subs = get_config_item("mqtt", "subscriptions", "#")
     for i in subs.split(","):
@@ -153,8 +153,8 @@ def on_message(mosq, obj, msg):
     if len(graph_name) > 19:
         graph_name = graph_name[:19]
 
-    ds = "DS:%s:GAUGE:120:U:U" % graph_name
-    ds = str(ds)
+    ds = "DS:val:GAUGE:300:U:U" # % graph_name
+    # ds = str(ds)
 
     if not os.path.exists(file_path):
         # Create the info file
@@ -173,7 +173,7 @@ def on_message(mosq, obj, msg):
             RRAstr = get_config_item(
                 msg.topic,
                 "archives",
-                "RRA:AVERAGE:0.5:2:30,RRA:AVERAGE:0.5:5:288,RRA:AVERAGE:0.5:30:336,RRA:AVERAGE:0.5:60:1488,RRA:AVERAGE:0.5:720:744,RRA:AVERAGE:0.5:1440:265"
+                "RRA:AVERAGE:0.5:2:720,RRA:AVERAGE:0.5:8:540,RRA:AVERAGE:0.5:12:840,RRA:AVERAGE:0.5:16:1260,RRA:AVERAGE:0.5:20:2160,RRA:AVERAGE:0.5:32:4050,RRA:AVERAGE:0.5:60:4272,RRA:AVERAGE:0.5:120:4380,RRA:AVERAGE:0.5:240:4272,RRA:AVERAGE:0.5:720:5475,RRA:AVERAGE:0.5:1440:3650"
             )
 
             RRAs=[]
@@ -190,7 +190,7 @@ def on_message(mosq, obj, msg):
             logger.error("Could not create RRD for topic: %s: %s" % (ds, str(e)))
     try:
         logger.info("Updating: %s with value: %s" % (file_path, pl))
-        rrdtool.update(str(file_path), str("N:%f" % pl))
+        rrdtool.update(str(file_path), str("N:%f" % float(pl)))
     except rrdtool.error as e:
         logger.error("Could not log value: %s to RRD %s for topic: %s: %s" % (pl, file_path, msg.topic, str(e)))
 
